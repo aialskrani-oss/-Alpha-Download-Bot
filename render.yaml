@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: alpha-downloader-bot
+    runtime: python
+    rootDir: .
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: INSTAGRAM_USERNAME
+        sync: false
+      - key: INSTAGRAM_PASSWORD
+        sync: false
+      - key: FACEBOOK_COOKIES
+        sync: false
+      - key: KEEP_ALIVE_PORT
+        value: 5001
+    autoDeploy: true
