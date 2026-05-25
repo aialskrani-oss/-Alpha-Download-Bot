@@ -1,0 +1,16 @@
+version: "3.9"
+
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - INSTAGRAM_USERNAME=${INSTAGRAM_USERNAME:-}
+      - INSTAGRAM_PASSWORD=${INSTAGRAM_PASSWORD:-}
+      - FACEBOOK_COOKIES=${FACEBOOK_COOKIES:-}
+      - KEEP_ALIVE_PORT=5001
+    ports:
+      - "5001:5001"
+    volumes:
+      - /tmp:/tmp
