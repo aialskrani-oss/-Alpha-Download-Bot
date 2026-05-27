@@ -5,16 +5,14 @@ services:
       rootDir: .
       buildCommand: pip install -r requirements.txt
       startCommand: python main.py
-      # نقطة فحص الصحة — يستخدمها Render للتحقق من أن التطبيق يعمل
-      # Health check path — Render uses this to verify the app is running
+      # Render يتحقق من /health على المنفذ $PORT الذي يمرره للتطبيق تلقائياً
+      # Render health-checks /health on the $PORT it injects automatically
       healthCheckPath: /health
       envVars:
         - key: TELEGRAM_BOT_TOKEN
           sync: false
         - key: FACEBOOK_COOKIES
           sync: false
-        - key: KEEP_ALIVE_PORT
-          value: "5001"
         # رابط التطبيق الخارجي لـ self-ping / External URL for self-ping
         - key: RENDER_EXTERNAL_URL
           sync: false
