@@ -95,7 +95,7 @@ def _run_server():
     تشغيل خادم Flask على المنفذ المحدد
     Run Flask server on the configured port
     """
-    port = int(os.environ.get("KEEP_ALIVE_PORT", 5001))
+    port = int(os.environ.get("PORT") or os.environ.get("KEEP_ALIVE_PORT") or 5001)
     # تعطيل سجلات Flask الافتراضية لتجنب الضوضاء / Suppress Flask default logs
     import logging
     log = logging.getLogger("werkzeug")
