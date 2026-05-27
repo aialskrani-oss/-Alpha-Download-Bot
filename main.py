@@ -395,118 +395,118 @@ def _is_instagram_image_url(url: str) -> bool:
       return False
 
 
-  def _extract_shortcode(url: str) -> str | None:
-      """استخراج shortcode من رابط Instagram / Extract Instagram shortcode."""
-      m = re.search(r"/p/([A-Za-z0-9_-]+)", url)
-      return m.group(1) if m else None
+def _extract_shortcode(url: str) -> str | None:
+    """استخراج shortcode من رابط Instagram / Extract Instagram shortcode."""
+    m = re.search(r"/p/([A-Za-z0-9_-]+)", url)
+    return m.group(1) if m else None
 
 
-  def _download_image_from_url(img_url: str, out_path: str, headers: dict) -> bool:
-      """تحميل صورة من رابط مباشر وحفظها / Download image from direct URL."""
-      try:
-          r = requests.get(img_url, headers=headers, stream=True, timeout=30)
-          if r.status_code == 200 and int(r.headers.get("content-length", 1)) > 0:
-              with open(out_path, "wb") as f:
-                  for chunk in r.iter_content(chunk_size=512 * 1024):
-                      if chunk:
-                          f.write(chunk)
-              return os.path.getsize(out_path) > 10_000  # at least 10 KB → real image
-      except Exception as e:
-          logger.warning(f"_download_image_from_url error: {e}")
-      return False
+def _download_image_from_url(img_url: str, out_path: str, headers: dict) -> bool:
+    """تحميل صورة من رابط مباشر وحفظها / Download image from direct URL."""
+    try:
+        r = requests.get(img_url, headers=headers, stream=True, timeout=30)
+        if r.status_code == 200 and int(r.headers.get("content-length", 1)) > 0:
+            with open(out_path, "wb") as f:
+                for chunk in r.iter_content(chunk_size=512 * 1024):
+                    if chunk:
+                        f.write(chunk)
+            return os.path.getsize(out_path) > 10_000  # at least 10 KB → real image
+    except Exception as e:
+        logger.warning(f"_download_image_from_url error: {e}")
+    return False
 
 
-  def _download_instagram_image(url: str, tmp_dir: str) -> str | None:
-      """
-      تحميل صورة Instagram بدون تسجيل دخول — ثلاث طرق متتالية:
-      1. صفحة Embed الرسمية (/embed/captioned/) → تحليل HTML
-      2. yt-dlp مع إعدادات مخصصة للصور
-      3. فيديو كخيار أخير
+def _download_instagram_image(url: str, tmp_dir: str) -> str | None:
+    """
+    تحميل صورة Instagram بدون تسجيل دخول — ثلاث طرق متتالية:
+    1. صفحة Embed الرسمية (/embed/captioned/) → تحليل HTML
+    2. yt-dlp مع إعدادات مخصصة للصور
+    3. فيديو كخيار أخير
 
-      Download Instagram image (no login) — 3-tier fallback:
-      1. Official embed page HTML parsing
-      2. yt-dlp with image-friendly options
-      3. Video as last resort
-      """
-      shortcode = _extract_shortcode(url)
-      browser_ua = (
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-          "AppleWebKit/537.36 (KHTML, like Gecko) "
-          "Chrome/124.0.0.0 Safari/537.36"
-      )
-      html_headers = {
-          "User-Agent": browser_ua,
-          "Accept": "text/html,application/xhtml+xml,*/*;q=0.9",
-          "Accept-Language": "en-US,en;q=0.9,ar;q=0.8",
-          "Accept-Encoding": "gzip, deflate, br",
-          "Sec-Fetch-Site": "none",
-          "Sec-Fetch-Mode": "navigate",
-      }
+    Download Instagram image (no login) — 3-tier fallback:
+    1. Official embed page HTML parsing
+    2. yt-dlp with image-friendly options
+    3. Video as last resort
+    """
+    shortcode = _extract_shortcode(url)
+    browser_ua = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    )
+    html_headers = {
+        "User-Agent": browser_ua,
+        "Accept": "text/html,application/xhtml+xml,*/*;q=0.9",
+        "Accept-Language": "en-US,en;q=0.9,ar;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-Mode": "navigate",
+    }
 
-      # ── الطريقة 1: صفحة embed الرسمية (تعمل بدون حساب) ──
-      # Method 1: Official Instagram embed page (no auth needed)
-      if shortcode:
-          try:
-              embed_url = f"https://www.instagram.com/p/{shortcode}/embed/captioned/"
-              resp = requests.get(embed_url, headers=html_headers, timeout=20)
-              if resp.status_code == 200:
-                  html = resp.text
-                  # Instagram embed has images in <img> tags with long CDN URLs
-                  # Pattern: src="https://...cdninstagram.com/..." or scontent
-                  img_urls = re.findall(
-                      r'(?:src|data-src)="(https://(?:[a-z0-9-]+.)?(?:cdninstagram|scontent)[^"]+.(?:jpg|jpeg|png|webp)[^"]*)"',
-                      html, re.IGNORECASE
-                  )
-                  if not img_urls:
-                      # Fallback: any https img URL in srcset
-                      img_urls = re.findall(
-                          r'"(https://[^"]+.(?:jpg|jpeg|png|webp)(?:\?[^"]*)?)"',
-                          html, re.IGNORECASE
-                      )
-                  if img_urls:
-                      # Sort by URL length — longer URLs tend to be full-resolution CDN URLs
-                      img_urls = sorted(set(img_urls), key=len, reverse=True)
-                      for img_url in img_urls[:3]:
-                          img_url = img_url.replace("\u0026", "&").replace("&amp;", "&")
-                          out = os.path.join(tmp_dir, "instagram_image.jpg")
-                          if _download_image_from_url(img_url, out, html_headers):
-                              logger.info(f"Instagram embed: downloaded image ({os.path.getsize(out)} bytes)")
-                              return out
-          except Exception as e:
-              logger.warning(f"Instagram embed page failed: {e}")
+    # ── الطريقة 1: صفحة embed الرسمية (تعمل بدون حساب) ──
+    # Method 1: Official Instagram embed page (no auth needed)
+    if shortcode:
+        try:
+            embed_url = f"https://www.instagram.com/p/{shortcode}/embed/captioned/"
+            resp = requests.get(embed_url, headers=html_headers, timeout=20)
+            if resp.status_code == 200:
+                html = resp.text
+                # Instagram embed has images in <img> tags with long CDN URLs
+                # Pattern: src="https://...cdninstagram.com/..." or scontent
+                img_urls = re.findall(
+                    r'(?:src|data-src)="(https://(?:[a-z0-9-]+.)?(?:cdninstagram|scontent)[^"]+.(?:jpg|jpeg|png|webp)[^"]*)"',
+                    html, re.IGNORECASE
+                )
+                if not img_urls:
+                    # Fallback: any https img URL in srcset
+                    img_urls = re.findall(
+                        r'"(https://[^"]+.(?:jpg|jpeg|png|webp)(?:\?[^"]*)?)"',
+                        html, re.IGNORECASE
+                    )
+                if img_urls:
+                    # Sort by URL length — longer URLs tend to be full-resolution CDN URLs
+                    img_urls = sorted(set(img_urls), key=len, reverse=True)
+                    for img_url in img_urls[:3]:
+                        img_url = img_url.replace("\u0026", "&").replace("&amp;", "&")
+                        out = os.path.join(tmp_dir, "instagram_image.jpg")
+                        if _download_image_from_url(img_url, out, html_headers):
+                            logger.info(f"Instagram embed: downloaded image ({os.path.getsize(out)} bytes)")
+                            return out
+        except Exception as e:
+            logger.warning(f"Instagram embed page failed: {e}")
 
-      # ── الطريقة 2: yt-dlp بإعدادات مخصصة للصور (بدون قيود الفيديو) ──
-      # Method 2: yt-dlp with image-friendly options (no video-only format restrictions)
-      try:
-          output_path = os.path.join(tmp_dir, "%(id)s.%(ext)s")
-          ydl_opts = {
-              "format": "best",
-              "outtmpl": output_path,
-              "quiet": True,
-              "no_warnings": True,
-              "ignoreerrors": False,
-              # لا نضيف merge_output_format لأنه يكسر تحميل الصور
-              "http_headers": {
-                  "User-Agent": browser_ua,
-                  "Accept-Language": "en-US,en;q=0.9",
-              },
-          }
-          with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-              info = ydl.extract_info(url, download=True)
-              if info:
-                  candidates = [
-                      f for f in Path(tmp_dir).glob("*")
-                      if f.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4", ".webm")
-                      and f.stat().st_size > 5_000
-                  ]
-                  if candidates:
-                      best = max(candidates, key=lambda f: f.stat().st_size)
-                      logger.info(f"Instagram yt-dlp: downloaded {best.name} ({best.stat().st_size} bytes)")
-                      return str(best)
-      except Exception as e:
-          logger.warning(f"Instagram yt-dlp failed: {e}")
+    # ── الطريقة 2: yt-dlp بإعدادات مخصصة للصور (بدون قيود الفيديو) ──
+    # Method 2: yt-dlp with image-friendly options (no video-only format restrictions)
+    try:
+        output_path = os.path.join(tmp_dir, "%(id)s.%(ext)s")
+        ydl_opts = {
+            "format": "best",
+            "outtmpl": output_path,
+            "quiet": True,
+            "no_warnings": True,
+            "ignoreerrors": False,
+            # لا نضيف merge_output_format لأنه يكسر تحميل الصور
+            "http_headers": {
+                "User-Agent": browser_ua,
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            if info:
+                candidates = [
+                    f for f in Path(tmp_dir).glob("*")
+                    if f.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4", ".webm")
+                    and f.stat().st_size > 5_000
+                ]
+                if candidates:
+                    best = max(candidates, key=lambda f: f.stat().st_size)
+                    logger.info(f"Instagram yt-dlp: downloaded {best.name} ({best.stat().st_size} bytes)")
+                    return str(best)
+    except Exception as e:
+        logger.warning(f"Instagram yt-dlp failed: {e}")
 
-      return None
+    return None
 
   
 def _download_tiktok_api(url: str, tmp_dir: str) -> str | None:
