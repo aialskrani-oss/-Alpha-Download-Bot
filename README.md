@@ -1,125 +1,138 @@
 # ⚡ Alpha Downloader Bot
-### بوت منصة الفا | Alpha Platform
+  ### بوت منصة الفا | Alpha Platform
 
-بوت تيليجرام متكامل لتحميل الفيديوهات والصور من منصات التواصل الاجتماعي.
+  [![Build & Push Docker Image](https://github.com/aialskrani-oss/-Alpha-Download-Bot/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/aialskrani-oss/-Alpha-Download-Bot/actions)
 
----
+  بوت تيليجرام متكامل لتحميل الفيديوهات والصور من منصات التواصل الاجتماعي.
 
-## 📌 المنصات المدعومة
+  ---
 
-| المنصة | الحالة | الطريقة |
-|--------|--------|---------|
-| YouTube | ✅ يعمل بالكامل | yt-dlp |
-| TikTok | ✅ يعمل بالكامل | tikwm.com API |
-| Twitter/X | ✅ يعمل للتغريدات التي تحوي فيديو | yt-dlp |
-| Instagram | ⚙️ يتطلب بيانات دخول | instaloader |
-| Facebook | ⚙️ يتطلب كوكيز | yt-dlp + cookies |
+  ## 📌 المنصات المدعومة
 
----
+  | المنصة | الحالة | الطريقة |
+  |--------|--------|---------|
+  | YouTube | ✅ يعمل بالكامل | yt-dlp |
+  | TikTok | ✅ يعمل بالكامل | tikwm.com API + yt-dlp |
+  | Twitter/X | ✅ يعمل للتغريدات التي تحوي فيديو | yt-dlp |
+  | Instagram | ✅ يعمل للمنشورات العامة والريلز | yt-dlp (بدون حساب) |
+  | Facebook | ✅ عام / ⚙️ خاص بكوكيز | yt-dlp + cookies اختياري |
 
-## 🚀 النشر السريع
+  ---
 
-### على Render.com
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
+  ## 🚀 النشر السريع
 
-1. افتح [render.com](https://render.com) وسجّل دخولك
-2. New → Web Service → اربط GitHub repo
-3. أضف المتغيرات البيئية (انظر أدناه)
-4. انقر Deploy
+  ### على Render.com
+  [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
 
-### على Railway
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new)
+  1. افتح [render.com](https://render.com) وسجّل دخولك
+  2. New → Web Service → اربط GitHub repo
+  3. أضف المتغيرات البيئية (انظر أدناه)
+  4. انقر Deploy
 
-1. افتح [railway.app](https://railway.app)
-2. New Project → Deploy from GitHub repo
-3. أضف المتغيرات البيئية
-4. انشر
+  ### على Railway
+  [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new)
 
-### بـ Docker محلياً
-```bash
-git clone <your-repo>
-cd telegram-bot
-cp .env.example .env
-# عدّل .env وأضف قيمك
-docker-compose up -d
-```
+  1. افتح [railway.app](https://railway.app)
+  2. New Project → Deploy from GitHub repo
+  3. أضف المتغيرات البيئية
+  4. انشر
 
----
+  ### بـ Docker محلياً
+  ```bash
+  git clone https://github.com/aialskrani-oss/-Alpha-Download-Bot
+  cd -Alpha-Download-Bot
+  cp .env.example .env
+  # عدّل .env وأضف TELEGRAM_BOT_TOKEN
+  docker-compose up -d
+  ```
 
-## ⚙️ متغيرات البيئة
+  ---
 
-| المتغير | مطلوب | الوصف |
-|---------|-------|-------|
-| `TELEGRAM_BOT_TOKEN` | ✅ نعم | توكن البوت من @BotFather |
-| `INSTAGRAM_USERNAME` | اختياري | اسم مستخدم حساب إنستغرام |
-| `INSTAGRAM_PASSWORD` | اختياري | كلمة مرور حساب إنستغرام |
-| `FACEBOOK_COOKIES` | اختياري | كوكيز فيسبوك بصيغة Netscape |
-| `KEEP_ALIVE_PORT` | اختياري | منفذ خادم keep-alive (افتراضي: 5001) |
+  ## ⚙️ متغيرات البيئة
 
----
+  | المتغير | مطلوب | الوصف |
+  |---------|-------|-------|
+  | `TELEGRAM_BOT_TOKEN` | ✅ نعم | توكن البوت من @BotFather |
+  | `FACEBOOK_COOKIES` | اختياري | كوكيز فيسبوك بصيغة Netscape للمقاطع الخاصة |
+  | `KEEP_ALIVE_PORT` | اختياري | منفذ خادم keep-alive (افتراضي: 5001) |
+  | `RENDER_EXTERNAL_URL` | اختياري | رابط التطبيق الخارجي لـ self-ping |
 
-## 🛠️ التثبيت المحلي
+  > **ملاحظة:** لا يوجد INSTAGRAM_USERNAME أو INSTAGRAM_PASSWORD — Instagram يعمل بدون حساب للمحتوى العام.
 
-```bash
-# 1. نسخ المشروع
-git clone <your-repo>
-cd telegram-bot
+  ---
 
-# 2. تثبيت المتطلبات
-pip install -r requirements.txt
+  ## 🛠️ التثبيت المحلي
 
-# 3. إعداد المتغيرات البيئية
-cp .env.example .env
-# افتح .env وأضف TELEGRAM_BOT_TOKEN
+  ```bash
+  # 1. نسخ المشروع
+  git clone https://github.com/aialskrani-oss/-Alpha-Download-Bot
 
-# 4. تشغيل البوت
-python main.py
-```
+  # 2. تثبيت المتطلبات
+  pip install -r requirements.txt
 
-**المتطلبات:**
-- Python 3.10+
-- ffmpeg مثبّت على النظام
+  # 3. إعداد المتغيرات البيئية
+  cp .env.example .env
+  # افتح .env وأضف TELEGRAM_BOT_TOKEN
 
----
+  # 4. تشغيل البوت
+  python main.py
+  ```
 
-## 🔒 إعداد Instagram
+  **المتطلبات:**
+  - Python 3.10+
+  - ffmpeg مثبّت على النظام
 
-لتفعيل تحميل Instagram:
-1. أنشئ حساباً ثانوياً على إنستغرام (لا تستخدم حسابك الشخصي)
-2. أضف `INSTAGRAM_USERNAME` و `INSTAGRAM_PASSWORD` كمتغيرات بيئة
-3. أعد تشغيل البوت — سيحفظ الجلسة تلقائياً
+  ---
 
----
+  ## 🍪 كيفية إعداد Facebook Cookies (اختياري)
 
-## 💡 الإبقاء على البوت حياً 24/7
+  لتحميل مقاطع Facebook الخاصة أو التي تتطلب تسجيل دخول:
 
-البوت يشغّل خادم Flask بسيط على المنفذ 5001.
-استخدم **UptimeRobot** (مجاني) لعمل ping كل 5 دقائق:
+  1. ثبّت إضافة **"Get cookies.txt LOCALLY"** على Chrome أو Firefox
+  2. سجّل دخولك على [facebook.com](https://facebook.com)
+  3. انقر على أيقونة الإضافة واختر "Export" → Netscape format
+  4. انسخ المحتوى الكامل للملف
+  5. أضفه كمتغير بيئة باسم `FACEBOOK_COOKIES`
 
-1. افتح [uptimerobot.com](https://uptimerobot.com) وسجّل دخولك
-2. New Monitor → HTTP(s)
-3. أضف رابط بوتك: `https://your-app.onrender.com/health`
-4. الفترة: كل 5 دقائق
+  > **للمحتوى العام:** البوت يحاول التحميل بدون كوكيز أولاً تلقائياً.
 
----
+  ---
 
-## 📁 هيكل المشروع
+  ## 💡 الإبقاء على البوت حياً 24/7
 
-```
-telegram-bot/
-├── main.py           # الكود الرئيسي للبوت (974 سطر)
-├── keep_alive.py     # خادم Flask للـ ping
-├── requirements.txt  # مكتبات Python
-├── Dockerfile        # لنشر Docker
-├── docker-compose.yml
-├── render.yaml       # إعداد Render.com
-├── .env.example      # مثال متغيرات البيئة
-├── .gitignore
-└── README.md
-```
+  البوت يشغّل خادم Flask على المنفذ 5001 مع self-ping كل 3 دقائق.
 
----
+  **استخدم UptimeRobot** (مجاني) لضمان عدم نوم البوت:
 
-## 📊 الإصدار
+  1. افتح [uptimerobot.com](https://uptimerobot.com) وسجّل دخولك
+  2. New Monitor → HTTP(s)
+  3. أضف رابط بوتك: `https://your-app.onrender.com/health`
+  4. الفترة: كل 5 دقائق
 
-**v1.1.0** — Alpha Platform © 2024
+  نقاط النهاية المتاحة:
+  - `/health` — فحص الصحة (JSON)
+  - `/ping` — ping بسيط
+  - `/stats` — إحصائيات وقت التشغيل
+
+  ---
+
+  ## 📁 هيكل المشروع
+
+  ```
+  ├── main.py                     # الكود الرئيسي للبوت
+  ├── keep_alive.py               # خادم Flask للـ ping والصحة
+  ├── requirements.txt            # مكتبات Python
+  ├── Dockerfile                  # Docker مع HEALTHCHECK
+  ├── docker-compose.yml
+  ├── render.yaml                 # إعداد Render.com مع healthCheckPath
+  ├── .env.example                # مثال متغيرات البيئة
+  ├── github-actions-workflow.yml # نموذج GitHub Actions
+  └── README.md
+  ```
+
+  ---
+
+  ## 📊 الإصدار
+
+  **v1.1.0** — Alpha Platform © 2024
+  
