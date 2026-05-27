@@ -380,6 +380,62 @@ def _download_instagram_ytdlp(url: str, tmp_dir: str) -> str | None:
     return None
 
 
+# ===== تحديد نوع محتوى Instagram وتحميل الصور =====
+# Detect Instagram content type and download images
+
+def _is_instagram_image_url(url: str) -> bool:
+    """
+    تحديد إن كان رابط Instagram لصورة (/p/) أم فيديو (/reel/, /tv/)
+    Detect if Instagram URL is an image post (/p/) or video (/reel/, /tv/)
+    """
+    url_lower = url.lower()
+    if "/reel/" in url_lower or "/tv/" in url_lower or "/video/" in url_lower:
+        return False
+    if "/p/" in url_lower:
+        return True
+    return False
+
+
+def _download_instagram_image(url: str, tmp_dir: str) -> str | None:
+    """
+    تحميل صور Instagram العامة (منشورات /p/) باستخدام yt-dlp.
+    تستخدم format="best" لضمان تحميل الصورة بأعلى جودة متاحة.
+    Download public Instagram image posts (/p/) using yt-dlp with format="best".
+    """
+    output_path = os.path.join(tmp_dir, "%(id)s.%(ext)s")
+    ydl_opts = {
+        "format": "best",
+        "outtmpl": output_path,
+        "quiet": True,
+        "no_warnings": True,
+        "ignoreerrors": True,
+        "extract_flat": False,
+        "http_headers": {
+            "User-Agent": MOBILE_UA,
+            "Accept-Language": "ar,en-US;q=0.9,en;q=0.8",
+        },
+        "extractor_args": {
+            "instagram": {"username": ["__bypass"]},
+        },
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            if not info:
+                return None
+            downloaded = list(Path(tmp_dir).glob("*"))
+            if downloaded:
+                # فضّل الصور إن وُجدت / Prefer image files if available
+                image_files = [f for f in downloaded
+                               if f.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp", ".gif")]
+                if image_files:
+                    return str(max(image_files, key=lambda f: f.stat().st_size))
+                return str(max(downloaded, key=lambda f: f.stat().st_size))
+    except Exception as e:
+        logger.warning(f"Instagram image download failed: {e}")
+    return None
+
+
 # ===== تحميل TikTok عبر API المباشر =====
 
 def _download_tiktok_api(url: str, tmp_dir: str) -> str | None:
@@ -510,6 +566,54 @@ def _download_with_ytdlp(url: str, tmp_dir: str, platform: str) -> str | None:
     return None
 
 
+# ===== دالة إرسال الوسائط (صور وفيديوهات وصوت) =====
+# Universal media sender — detects file type and uses the right Telegram method
+
+async def send_media(message, file_path: str, caption: str) -> None:
+    """
+    ترسل الملف المُحمَّل للمستخدم بالطريقة الصحيحة حسب نوعه.
+    Sends the downloaded file using the correct Telegram method based on extension.
+
+    - .jpg/.jpeg/.png/.gif/.webp → reply_photo (أو reply_document إذا > 10 MB)
+    - .mp3/.m4a/.ogg            → reply_audio
+    - الباقي (mp4, mkv, ...)    → reply_video
+    """
+    IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+    AUDIO_EXTS = {".mp3", ".m4a", ".ogg", ".opus"}
+    file_ext = Path(file_path).suffix.lower()
+    file_size = os.path.getsize(file_path)
+
+    with open(file_path, "rb") as f:
+        if file_ext in IMAGE_EXTS:
+            # تليجرام يقبل صوراً حتى 10 MB فقط — أرسل كـ document إذا أكبر
+            # Telegram photo limit is 10 MB — send as document if larger
+            if file_size > 10 * 1024 * 1024:
+                await message.reply_document(
+                    document=f,
+                    caption=caption + "\n_📎 أُرسلت كملف لأن حجمها يتجاوز 10 MB_",
+                    parse_mode=ParseMode.MARKDOWN,
+                )
+            else:
+                await message.reply_photo(
+                    photo=f,
+                    caption=caption,
+                    parse_mode=ParseMode.MARKDOWN,
+                )
+        elif file_ext in AUDIO_EXTS:
+            await message.reply_audio(
+                audio=f,
+                caption=caption,
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            await message.reply_video(
+                video=f,
+                caption=caption,
+                parse_mode=ParseMode.MARKDOWN,
+                supports_streaming=True,
+            )
+
+
 # ===== دالة self-ping لمنع النوم (asyncio) =====
 # Self-ping function to prevent platform sleep using asyncio
 
@@ -613,12 +717,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     None, _download_with_ytdlp, resolved_url, tmp_dir, platform
                 )
 
-        # ====== Instagram: yt-dlp بدون instaloader ======
+        # ====== Instagram: صور (/p/) عبر _download_instagram_image، فيديوهات (/reel/ /tv/) عبر yt-dlp ======
         elif platform == "instagram":
-            downloaded_file = await loop.run_in_executor(
-                None, _download_instagram_ytdlp, resolved_url, tmp_dir
-            )
-            # إعادة محاولة بـ yt-dlp العام إذا فشل المحاولة الأولى
+            # تحديد نوع المحتوى: صورة أم فيديو / Detect content type: image or video
+            is_image = _is_instagram_image_url(resolved_url)
+            if is_image:
+                downloaded_file = await loop.run_in_executor(
+                    None, _download_instagram_image, resolved_url, tmp_dir
+                )
+            if not downloaded_file:
+                # فيديو أو فشل تحميل الصورة — جرّب كفيديو / Video or image failed — try as video
+                downloaded_file = await loop.run_in_executor(
+                    None, _download_instagram_ytdlp, resolved_url, tmp_dir
+                )
             if not downloaded_file:
                 downloaded_file = await loop.run_in_executor(
                     None, _download_with_ytdlp, resolved_url, tmp_dir, platform
@@ -654,21 +765,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # --- إرسال الملف / Send file ---
         await status_msg.edit_text("📤 *جارٍ الإرسال...*", parse_mode=ParseMode.MARKDOWN)
 
-        file_ext = Path(downloaded_file).suffix.lower()
         caption = f"⚡ *Alpha Downloader* | منصة الفا\n📦 الحجم: {human_size(file_size)}"
 
-        with open(downloaded_file, "rb") as f:
-            if file_ext in (".jpg", ".jpeg", ".png", ".webp"):
-                await message.reply_photo(photo=f, caption=caption, parse_mode=ParseMode.MARKDOWN)
-            elif file_ext == ".mp3":
-                await message.reply_audio(audio=f, caption=caption, parse_mode=ParseMode.MARKDOWN)
-            else:
-                await message.reply_video(
-                    video=f,
-                    caption=caption,
-                    parse_mode=ParseMode.MARKDOWN,
-                    supports_streaming=True,
-                )
+        try:
+            await send_media(message, downloaded_file, caption)
+        except Exception as send_err:
+            logger.error(f"send_media raised: {send_err}")
+            await status_msg.edit_text(
+                "❌ فشل إرسال الملف.\n"
+                "الصورة أكبر من 10 ميجابايت أو بصيغة غير مدعومة.\n\n"
+                "اكتب /help للمساعدة."
+            )
+            return
 
         await status_msg.delete()
 
@@ -701,25 +809,23 @@ def main() -> None:
     keep_alive()
     logger.info("Keep-alive server started.")
 
-    application = Application.builder().token(token).build()
+    # تشغيل self-ping بشكل غير متزامن مع البوت / Run self-ping alongside the bot
+    async def _post_init(app):
+        asyncio.create_task(ping_self())
+
+    # بناء التطبيق مع post_init عبر builder pattern (الطريقة الصحيحة في v20)
+    # Build app with post_init via builder (correct way in python-telegram-bot v20)
+    application = Application.builder().token(token).post_init(_post_init).build()
 
     # تسجيل معالجات الأوامر / Register command handlers
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("about", about_command))
-
-    # معالج الرسائل النصية / Text message handler
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
     )
 
     logger.info("Alpha Downloader Bot is starting...")
-
-    # تشغيل self-ping بشكل غير متزامن مع البوت / Run self-ping alongside the bot
-    async def post_init(app):
-        asyncio.create_task(ping_self())
-
-    application.post_init = post_init
 
     application.run_polling(
         allowed_updates=Update.ALL_TYPES,
