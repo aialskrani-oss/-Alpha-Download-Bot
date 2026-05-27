@@ -384,56 +384,132 @@ def _download_instagram_ytdlp(url: str, tmp_dir: str) -> str | None:
 # Detect Instagram content type and download images
 
 def _is_instagram_image_url(url: str) -> bool:
-    """
-    تحديد إن كان رابط Instagram لصورة (/p/) أم فيديو (/reel/, /tv/)
-    Detect if Instagram URL is an image post (/p/) or video (/reel/, /tv/)
-    """
-    url_lower = url.lower()
-    if "/reel/" in url_lower or "/tv/" in url_lower or "/video/" in url_lower:
-        return False
-    if "/p/" in url_lower:
-        return True
-    return False
+      """
+      تحديد إن كان رابط Instagram لصورة أم فيديو.
+      /reel/ /tv/ /video/ → فيديو
+      /p/                  → قد يكون صورة أو كاروسيل (صور متعددة) أو فيديو
+      غير ذلك             → افترض فيديو
+      Detect if Instagram URL is an image/carousel (/p/) or video (/reel/ /tv/).
+      """
+      url_lower = url.lower()
+      if "/reel/" in url_lower or "/tv/" in url_lower or "/video/" in url_lower:
+          return False
+      # /p/ = منشور عادي (صورة أو كاروسيل) / /p/ = regular post (image or carousel)
+      if "/p/" in url_lower:
+          return True
+      return False
+  
 
 
 def _download_instagram_image(url: str, tmp_dir: str) -> str | None:
-    """
-    تحميل صور Instagram العامة (منشورات /p/) باستخدام yt-dlp.
-    تستخدم format="best" لضمان تحميل الصورة بأعلى جودة متاحة.
-    Download public Instagram image posts (/p/) using yt-dlp with format="best".
-    """
-    output_path = os.path.join(tmp_dir, "%(id)s.%(ext)s")
-    ydl_opts = {
-        "format": "best",
-        "outtmpl": output_path,
-        "quiet": True,
-        "no_warnings": True,
-        "ignoreerrors": True,
-        "extract_flat": False,
-        "http_headers": {
-            "User-Agent": MOBILE_UA,
-            "Accept-Language": "ar,en-US;q=0.9,en;q=0.8",
-        },
-        "extractor_args": {
-            "instagram": {"username": ["__bypass"]},
-        },
-    }
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            if not info:
-                return None
-            downloaded = list(Path(tmp_dir).glob("*"))
-            if downloaded:
-                # فضّل الصور إن وُجدت / Prefer image files if available
-                image_files = [f for f in downloaded
-                               if f.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp", ".gif")]
-                if image_files:
-                    return str(max(image_files, key=lambda f: f.stat().st_size))
-                return str(max(downloaded, key=lambda f: f.stat().st_size))
-    except Exception as e:
-        logger.warning(f"Instagram image download failed: {e}")
-    return None
+      """
+      تحميل صور Instagram العامة بثلاث طرق متتالية (بدون تسجيل دخول):
+      1. Instagram oEmbed API — يعطي رابط الصورة مباشرةً
+      2. استخراج og:image من HTML الصفحة — يعطي الصورة الكاملة
+      3. yt-dlp كخيار أخير
+
+      Download public Instagram images without login using 3-tier fallback:
+      1. Instagram oEmbed API — returns direct image URL
+      2. og:image extraction from HTML — returns full-size image
+      3. yt-dlp as last resort
+      """
+      browser_ua = (
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+          "AppleWebKit/537.36 (KHTML, like Gecko) "
+          "Chrome/124.0.0.0 Safari/537.36"
+      )
+      headers = {
+          "User-Agent": browser_ua,
+          "Accept": "text/html,application/xhtml+xml,*/*;q=0.9",
+          "Accept-Language": "en-US,en;q=0.8",
+          "Accept-Encoding": "gzip, deflate, br",
+      }
+
+      def _save_image(img_url: str, suffix: str = ".jpg") -> str | None:
+          """تحميل الصورة من رابط مباشر وحفظها"""
+          try:
+              img_resp = requests.get(
+                  img_url, headers=headers, timeout=30, stream=True
+              )
+              if img_resp.status_code == 200:
+                  out = os.path.join(tmp_dir, f"instagram_image{suffix}")
+                  with open(out, "wb") as f:
+                      for chunk in img_resp.iter_content(chunk_size=1024 * 512):
+                          if chunk:
+                              f.write(chunk)
+                  if os.path.getsize(out) > 0:
+                      return out
+          except Exception as e:
+              logger.warning(f"Image download from URL failed: {e}")
+          return None
+
+      # --- الطريقة 1: Instagram oEmbed API (مجاني وبدون مصادقة) ---
+      # Method 1: Instagram oEmbed API (free, no auth required)
+      try:
+          oembed_url = f"https://api.instagram.com/oembed/?url={url}&maxwidth=1080&hidecaption=1"
+          resp = requests.get(oembed_url, headers=headers, timeout=10)
+          if resp.status_code == 200:
+              data = resp.json()
+              thumb = data.get("thumbnail_url", "")
+              if thumb:
+                  logger.info(f"Instagram oEmbed: got thumbnail {thumb[:60]}...")
+                  result = _save_image(thumb, ".jpg")
+                  if result:
+                      return result
+      except Exception as e:
+          logger.warning(f"Instagram oEmbed failed: {e}")
+
+      # --- الطريقة 2: استخراج og:image من صفحة Instagram مباشرةً ---
+      # Method 2: Extract og:image from the Instagram post HTML page
+      try:
+          page_resp = requests.get(url, headers=headers, timeout=20)
+          if page_resp.status_code == 200:
+              html = page_resp.text
+              # ابحث عن og:image في الـ meta tags
+              og_match = re.search(
+                  r'<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']',
+                  html, re.IGNORECASE
+              )
+              if not og_match:
+                  og_match = re.search(
+                      r'<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']',
+                      html, re.IGNORECASE
+                  )
+              if og_match:
+                  img_url = og_match.group(1).replace("&amp;", "&")
+                  logger.info(f"Instagram og:image: {img_url[:60]}...")
+                  result = _save_image(img_url, ".jpg")
+                  if result:
+                      return result
+      except Exception as e:
+          logger.warning(f"Instagram og:image scraping failed: {e}")
+
+      # --- الطريقة 3: yt-dlp كخيار أخير ---
+      # Method 3: yt-dlp as last resort
+      try:
+          output_path = os.path.join(tmp_dir, "%(id)s.%(ext)s")
+          ydl_opts = {
+              "format": "best",
+              "outtmpl": output_path,
+              "quiet": True,
+              "no_warnings": True,
+              "ignoreerrors": True,
+              "http_headers": {"User-Agent": browser_ua},
+          }
+          with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+              info = ydl.extract_info(url, download=True)
+              if info:
+                  downloaded = [
+                      f for f in Path(tmp_dir).glob("*")
+                      if f.suffix.lower() in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4")
+                  ]
+                  if downloaded:
+                      return str(max(downloaded, key=lambda f: f.stat().st_size))
+      except Exception as e:
+          logger.warning(f"Instagram yt-dlp fallback failed: {e}")
+
+      return None
+  
 
 
 # ===== تحميل TikTok عبر API المباشر =====
