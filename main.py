@@ -896,38 +896,63 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 # ===== نقطة الدخول الرئيسية / Main Entry Point =====
 
 def main() -> None:
-    """إعداد وتشغيل البوت / Set up and run the bot"""
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-    if not token:
-        raise RuntimeError("TELEGRAM_BOT_TOKEN environment variable is not set!")
+      """إعداد وتشغيل البوت / Set up and run the bot"""
+      token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+      if not token:
+          raise RuntimeError("TELEGRAM_BOT_TOKEN environment variable is not set!")
 
-    # تشغيل خادم keep-alive في خيط منفصل / Start keep-alive server in background thread
-    keep_alive()
-    logger.info("Keep-alive server started.")
+      # تشغيل self-ping بشكل غير متزامن عبر post_init / Schedule self-ping via post_init
+      async def _post_init(app):
+          asyncio.create_task(ping_self())
 
-    # تشغيل self-ping بشكل غير متزامن مع البوت / Run self-ping alongside the bot
-    async def _post_init(app):
-        asyncio.create_task(ping_self())
+      # بناء التطبيق عبر builder pattern (الطريقة الصحيحة في v20)
+      # Build application via builder pattern (correct approach in python-telegram-bot v20)
+      application = Application.builder().token(token).post_init(_post_init).build()
 
-    # بناء التطبيق مع post_init عبر builder pattern (الطريقة الصحيحة في v20)
-    # Build app with post_init via builder (correct way in python-telegram-bot v20)
-    application = Application.builder().token(token).post_init(_post_init).build()
+      # تسجيل معالجات الأوامر والرسائل / Register command and message handlers
+      application.add_handler(CommandHandler("start", start_command))
+      application.add_handler(CommandHandler("help", help_command))
+      application.add_handler(CommandHandler("about", about_command))
+      application.add_handler(
+          MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
+      )
 
-    # تسجيل معالجات الأوامر / Register command handlers
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("about", about_command))
-    application.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
-    )
+      async def _run_bot() -> None:
+          """
+          تشغيل البوت باستخدام asyncio.gather لتشغيل keep_alive والبوت معاً.
+          Run bot with asyncio.gather so keep_alive and bot start concurrently.
+          """
+          # تشغيل خادم keep-alive في thread خلفي عبر executor / Start keep-alive via executor
+          loop = asyncio.get_running_loop()
+          loop.run_in_executor(None, keep_alive)
+          logger.info("Keep-alive server starting in background thread...")
 
-    logger.info("Alpha Downloader Bot is starting...")
+          # تهيئة التطبيق قبل التشغيل المتزامن / Initialize before concurrent start
+          await application.initialize()
 
-    application.run_polling(
-        allowed_updates=Update.ALL_TYPES,
-        drop_pending_updates=True,
-    )
+          # تشغيل polling وخدمة البوت في نفس الوقت باستخدام asyncio.gather
+          # Start update polling and bot service concurrently with asyncio.gather
+          await asyncio.gather(
+              application.updater.start_polling(
+                  allowed_updates=Update.ALL_TYPES,
+                  drop_pending_updates=True,
+              ),
+              application.start(),
+          )
 
+          logger.info("Alpha Downloader Bot is running.")
 
+          # الانتظار حتى إشارة الإيقاف (Ctrl+C أو SIGTERM) / Wait for shutdown signal
+          await application.updater.idle()
+
+          # تنظيف الموارد بشكل منظم / Clean shutdown
+          logger.info("Shutting down gracefully...")
+          await application.stop()
+          await application.shutdown()
+
+      logger.info("Alpha Downloader Bot is starting...")
+      asyncio.run(_run_bot())
+
+  
 if __name__ == "__main__":
     main()
