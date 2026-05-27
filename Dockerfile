@@ -25,5 +25,11 @@ FROM python:3.11-slim
   HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
       CMD curl -f http://localhost:5001/health || exit 1
 
-  CMD ["python", "main.py"]
+  # إنشاء مستخدم عادي (غير root) لتشغيل الحاوية بأمان
+  # Create non-root user for secure container execution
+  RUN adduser --disabled-password --gecos "" --uid 1001 botuser
+  USER botuser
+
+  # إعادة التشغيل التلقائي عند توقف البوت / Auto-restart on crash
+  CMD ["sh", "-c", "while true; do python main.py; echo 'Bot exited, restarting in 5s...'; sleep 5; done"]
   
