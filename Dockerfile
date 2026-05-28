@@ -17,13 +17,14 @@ FROM python:3.11-slim
   ENV PYTHONUNBUFFERED=1
   ENV PYTHONDONTWRITEBYTECODE=1
 
-  # منفذ خادم keep-alive / Keep-alive server port
-  EXPOSE 5001
+  # Render يحقن PORT تلقائياً — لا نثبّت منفذاً هنا
+  # Render injects PORT automatically — we don't hardcode it
+  EXPOSE 10000
 
-  # فحص صحة الحاوية — يتحقق من /health كل 30 ثانية
-  # Container health check — verifies /health every 30 seconds
-  HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-      CMD curl -f http://localhost:5001/health || exit 1
+  # فحص صحة الحاوية يستخدم المنفذ الديناميكي من Render
+  # Container health check uses Render's dynamic PORT (default 10000)
+  HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+      CMD curl -f http://localhost:${PORT:-10000}/health || exit 1
 
   # إنشاء مستخدم عادي (غير root) لتشغيل الحاوية بأمان
   # Create non-root user for secure container execution
