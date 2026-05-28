@@ -891,7 +891,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 
-# ===== نقطة الدخول الرئيسية / Main Entry Point =====
+  # ===== نقطة الدخول الرئيسية / Main Entry Point =====
 
   def main() -> None:
       """
