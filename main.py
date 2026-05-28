@@ -21,6 +21,7 @@ import logging
 import tempfile
 import shutil
 import time
+import threading
 from pathlib import Path
 
 import requests
@@ -891,21 +892,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 # ===== نقطة الدخول الرئيسية / Main Entry Point =====
 
-def main() -> None:
-      """إعداد وتشغيل البوت / Set up and run the bot"""
-      token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-      if not token:
+  def main() -> None:
+      """
+      الحل الصحيح لـ Render/Docker:
+        - البوت يعمل في asyncio loop في thread خلفي (لا تعارض مع إشارات SIGTERM)
+        - Flask يعمل في الـ main thread لاستقبال health checks من Render
+      Fix for Render/Docker CancelledError at startup:
+        - Bot asyncio loop runs in a background thread (no signal handler conflicts)
+        - Flask runs in main thread to serve health checks
+      """
+      token_val = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+      if not token_val:
           raise RuntimeError("TELEGRAM_BOT_TOKEN environment variable is not set!")
 
-      # تشغيل self-ping بشكل غير متزامن عبر post_init / Schedule self-ping via post_init
-      async def _post_init(app):
-          asyncio.create_task(ping_self())
+      application = Application.builder().token(token_val).build()
 
-      # بناء التطبيق عبر builder pattern (الطريقة الصحيحة في v20)
-      # Build application via builder pattern (correct approach in python-telegram-bot v20)
-      application = Application.builder().token(token).post_init(_post_init).build()
-
-      # تسجيل معالجات الأوامر والرسائل / Register command and message handlers
       application.add_handler(CommandHandler("start", start_command))
       application.add_handler(CommandHandler("help", help_command))
       application.add_handler(CommandHandler("about", about_command))
@@ -913,42 +914,45 @@ def main() -> None:
           MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
       )
 
-      async def _run_bot() -> None:
-          """
-          تشغيل البوت باستخدام asyncio.gather لتشغيل keep_alive والبوت معاً.
-          Run bot with asyncio.gather so keep_alive and bot start concurrently.
-          """
-          # تشغيل خادم keep-alive في thread خلفي عبر executor / Start keep-alive via executor
-          loop = asyncio.get_running_loop()
-          loop.run_in_executor(None, keep_alive)
-          logger.info("Keep-alive server starting in background thread...")
+      # حلقة asyncio منفصلة للبوت — تعمل في thread فلا تتلقى إشارات النظام
+      # Separate asyncio loop for bot — runs in a thread so it never receives OS signals
+      bot_loop = asyncio.new_event_loop()
 
-          # تهيئة التطبيق قبل التشغيل المتزامن / Initialize before concurrent start
+      async def _run_bot_async() -> None:
           await application.initialize()
-
-          # تشغيل polling وخدمة البوت في نفس الوقت باستخدام asyncio.gather
-          # Start update polling and bot service concurrently with asyncio.gather
-          await asyncio.gather(
-              application.updater.start_polling(
-                  allowed_updates=Update.ALL_TYPES,
-                  drop_pending_updates=True,
-              ),
-              application.start(),
+          await application.start()
+          await application.updater.start_polling(
+              allowed_updates=Update.ALL_TYPES,
+              drop_pending_updates=True,
           )
-
           logger.info("Alpha Downloader Bot is running.")
+          # جدولة self-ping بعد بدء التشغيل / Schedule self-ping after startup
+          asyncio.create_task(ping_self())
+          # الانتظار إلى الأبد — لا حاجة لإشارات إيقاف هنا
+          # Wait forever — no stop signals needed here
+          await asyncio.Event().wait()
 
-          # الانتظار حتى إشارة الإيقاف (Ctrl+C أو SIGTERM) / Wait for shutdown signal
-          await application.updater.idle()
-
-          # تنظيف الموارد بشكل منظم / Clean shutdown
-          logger.info("Shutting down gracefully...")
-          await application.stop()
-          await application.shutdown()
+      def _start_bot_thread() -> None:
+          asyncio.set_event_loop(bot_loop)
+          try:
+              bot_loop.run_until_complete(_run_bot_async())
+          except Exception as exc:
+              logger.error(f"Bot loop crashed: {exc}", exc_info=True)
 
       logger.info("Alpha Downloader Bot is starting...")
-      asyncio.run(_run_bot())
+      bot_thread = threading.Thread(target=_start_bot_thread, name="bot-thread", daemon=True)
+      bot_thread.start()
 
+      # تشغيل Flask في الـ main thread — يستقبل health checks من Render ويمنع النوم
+      # Run Flask in main thread — receives Render health checks and prevents sleep
+      port = int(os.environ.get("PORT") or os.environ.get("KEEP_ALIVE_PORT") or 5001)
+      logger.info(f"Keep-alive server starting on port {port}...")
+      import logging as _logging
+      _logging.getLogger("werkzeug").setLevel(_logging.WARNING)
+      from keep_alive import app as _flask_app
+      _flask_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+
+
+  if __name__ == "__main__":
+      main()
   
-if __name__ == "__main__":
-    main()
