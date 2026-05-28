@@ -1,20 +1,16 @@
 services:
     - type: web
       name: alpha-downloader-bot
-      runtime: python
+      runtime: docker
       rootDir: .
-      buildCommand: pip install -r requirements.txt
-      startCommand: python main.py
-      # Render يتحقق من /health على المنفذ $PORT الذي يمرره للتطبيق تلقائياً
-      # Render health-checks /health on the $PORT it injects automatically
+      dockerfilePath: ./Dockerfile
       healthCheckPath: /health
       envVars:
         - key: TELEGRAM_BOT_TOKEN
           sync: false
         - key: FACEBOOK_COOKIES
           sync: false
-        # رابط التطبيق الخارجي لـ self-ping / External URL for self-ping
         - key: RENDER_EXTERNAL_URL
-          sync: false
+          value: https://alpha-download-bot.onrender.com
       autoDeploy: true
   
