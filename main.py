@@ -63,8 +63,9 @@ MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 BOT_START_TIME = time.time()
 
 # الرابط الداخلي لـ ping (يُقرأ من البيئة) / Internal URL for self-ping
-SELF_URL = os.environ.get("RENDER_EXTERNAL_URL", "")
-if not SELF_URL:
+# الرابط الخارجي للخدمة — يُستخدم لـ self-ping لمنع نوم Render المجاني
+SELF_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://alpha-download-bot.onrender.com")
+if "replit" in SELF_URL.lower() or not SELF_URL:
     SELF_URL = os.environ.get("REPLIT_URL", "")
 KEEP_ALIVE_PORT = int(os.environ.get("KEEP_ALIVE_PORT", 5001))
 
