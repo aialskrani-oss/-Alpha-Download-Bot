@@ -890,7 +890,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             logger.warning(f"Could not clean tmp_dir {tmp_dir}: {cleanup_err}")
 
 
-# ===== نقطة الدخول الرئيسية / Main Entry Point =====
+
+  # ===== نقطة الدخول الرئيسية / Main Entry Point =====
 
   def main() -> None:
       """
@@ -926,10 +927,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
               drop_pending_updates=True,
           )
           logger.info("Alpha Downloader Bot is running.")
-          # جدولة self-ping بعد بدء التشغيل / Schedule self-ping after startup
           asyncio.create_task(ping_self())
-          # الانتظار إلى الأبد — لا حاجة لإشارات إيقاف هنا
-          # Wait forever — no stop signals needed here
           await asyncio.Event().wait()
 
       def _start_bot_thread() -> None:
