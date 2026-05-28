@@ -321,15 +321,10 @@ def get_ydl_opts(output_path: str, platform: str = "other", cookies_file: str | 
             },
         })
     elif platform == "instagram":
-        # --- تعديل Instagram: استخدام yt-dlp بدلاً من instaloader ---
         # Instagram public content via yt-dlp without login credentials
+        # No extractor_args needed — yt-dlp handles public content natively
         base_opts.update({
             "format": "best[height<=720]/best",
-            "extractor_args": {
-                "instagram": {
-                    "username": ["__bypass"],
-                },
-            },
         })
     elif platform == "twitter":
         base_opts.update({
