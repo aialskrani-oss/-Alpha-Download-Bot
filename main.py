@@ -891,64 +891,63 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 
-  # ===== نقطة الدخول الرئيسية / Main Entry Point =====
+# ===== نقطة الدخول الرئيسية / Main Entry Point =====
 
-  def main() -> None:
-      """
-      الحل الصحيح لـ Render/Docker:
-        - البوت يعمل في asyncio loop في thread خلفي (لا تعارض مع إشارات SIGTERM)
-        - Flask يعمل في الـ main thread لاستقبال health checks من Render
-      Fix for Render/Docker CancelledError at startup:
-        - Bot asyncio loop runs in a background thread (no signal handler conflicts)
-        - Flask runs in main thread to serve health checks
-      """
-      token_val = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-      if not token_val:
-          raise RuntimeError("TELEGRAM_BOT_TOKEN environment variable is not set!")
+def main() -> None:
+    """
+    الحل الصحيح لـ Render/Docker:
+      - البوت يعمل في asyncio loop في thread خلفي (لا تعارض مع إشارات SIGTERM)
+      - Flask يعمل في الـ main thread لاستقبال health checks من Render
+    Fix for Render/Docker CancelledError at startup:
+      - Bot asyncio loop runs in a background thread (no signal handler conflicts)
+      - Flask runs in main thread to serve health checks
+    """
+    token_val = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    if not token_val:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN environment variable is not set!")
 
-      application = Application.builder().token(token_val).build()
+    application = Application.builder().token(token_val).build()
 
-      application.add_handler(CommandHandler("start", start_command))
-      application.add_handler(CommandHandler("help", help_command))
-      application.add_handler(CommandHandler("about", about_command))
-      application.add_handler(
-          MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
-      )
+    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("about", about_command))
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
+    )
 
-      # حلقة asyncio منفصلة للبوت — تعمل في thread فلا تتلقى إشارات النظام
-      bot_loop = asyncio.new_event_loop()
+    # حلقة asyncio منفصلة للبوت — تعمل في thread فلا تتلقى إشارات النظام
+    bot_loop = asyncio.new_event_loop()
 
-      async def _run_bot_async() -> None:
-          await application.initialize()
-          await application.start()
-          await application.updater.start_polling(
-              allowed_updates=Update.ALL_TYPES,
-              drop_pending_updates=True,
-          )
-          logger.info("Alpha Downloader Bot is running.")
-          asyncio.create_task(ping_self())
-          await asyncio.Event().wait()
+    async def _run_bot_async() -> None:
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
+        logger.info("Alpha Downloader Bot is running.")
+        asyncio.create_task(ping_self())
+        await asyncio.Event().wait()
 
-      def _start_bot_thread() -> None:
-          asyncio.set_event_loop(bot_loop)
-          try:
-              bot_loop.run_until_complete(_run_bot_async())
-          except Exception as exc:
-              logger.error(f"Bot loop crashed: {exc}", exc_info=True)
+    def _start_bot_thread() -> None:
+        asyncio.set_event_loop(bot_loop)
+        try:
+            bot_loop.run_until_complete(_run_bot_async())
+        except Exception as exc:
+            logger.error(f"Bot loop crashed: {exc}", exc_info=True)
 
-      logger.info("Alpha Downloader Bot is starting...")
-      bot_thread = threading.Thread(target=_start_bot_thread, name="bot-thread", daemon=True)
-      bot_thread.start()
+    logger.info("Alpha Downloader Bot is starting...")
+    bot_thread = threading.Thread(target=_start_bot_thread, name="bot-thread", daemon=True)
+    bot_thread.start()
 
-      # Flask في الـ main thread — health checks + منع نوم Render
-      port = int(os.environ.get("PORT") or os.environ.get("KEEP_ALIVE_PORT") or 5001)
-      logger.info(f"Keep-alive server starting on port {port}...")
-      import logging as _logging
-      _logging.getLogger("werkzeug").setLevel(_logging.WARNING)
-      from keep_alive import app as _flask_app
-      _flask_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+    # Flask في الـ main thread — health checks + منع نوم Render
+    port = int(os.environ.get("PORT") or os.environ.get("KEEP_ALIVE_PORT") or 5001)
+    logger.info(f"Keep-alive server starting on port {port}...")
+    import logging as _logging
+    _logging.getLogger("werkzeug").setLevel(_logging.WARNING)
+    from keep_alive import app as _flask_app
+    _flask_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
 
-  if __name__ == "__main__":
-      main()
-  
+if __name__ == "__main__":
+    main()
