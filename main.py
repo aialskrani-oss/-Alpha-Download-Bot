@@ -353,24 +353,44 @@ def get_ydl_opts(output_path: str, platform: str = "other", cookies_file: str | 
 # ===== تحميل Instagram عبر yt-dlp (بدون instaloader) =====
 # Download Instagram public content using yt-dlp — no login required
 
-def _download_instagram_ytdlp(url: str, tmp_dir: str) -> str | None:
+def _download_instagram_ytdlp(url: str, tmp_dir: str) -> list[str] | str | None:
     """
     تحميل محتوى Instagram العام باستخدام yt-dlp بدون بيانات دخول.
+    يدعم: منشور فردي، كاروسيل (صور متعددة)، ريلز، IGTV.
     Download public Instagram content using yt-dlp without login.
-    يعمل مع: منشورات، ريلز، IGTV / Works with: posts, reels, IGTV
+    Supports: single post, carousel (multiple images), reels, IGTV.
     """
-    output_path = os.path.join(tmp_dir, "%(id)s.%(ext)s")
+    output_path = os.path.join(tmp_dir, "%(autonumber)03d.%(ext)s")
     ydl_opts = get_ydl_opts(output_path, platform="instagram")
+    ydl_opts["ignoreerrors"] = True   # لا تتوقف عند فشل صورة واحدة في الكاروسيل
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
             if not info:
                 return None
-            # البحث عن الملف المُحمَّل / Find the downloaded file
-            downloaded = list(Path(tmp_dir).glob("*"))
-            if downloaded:
-                return str(max(downloaded, key=lambda f: f.stat().st_size))
+
+            IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+            VIDEO_EXTS = {".mp4", ".webm", ".mkv", ".mov"}
+
+            all_files = sorted(
+                [f for f in Path(tmp_dir).glob("*") if f.stat().st_size > 5_000],
+                key=lambda f: f.name
+            )
+            images = [str(f) for f in all_files if f.suffix.lower() in IMAGE_EXTS]
+            videos = [str(f) for f in all_files if f.suffix.lower() in VIDEO_EXTS]
+
+            if len(images) > 1:
+                logger.info(f"Instagram yt-dlp: {len(images)} images (carousel)")
+                return images
+            elif len(images) == 1:
+                logger.info(f"Instagram yt-dlp: 1 image")
+                return images[0]
+            elif videos:
+                best = max(videos, key=lambda fp: os.path.getsize(fp))
+                logger.info(f"Instagram yt-dlp: video {Path(best).name}")
+                return best
+
     except Exception as e:
         logger.warning(f"Instagram yt-dlp failed: {e}")
 
@@ -527,26 +547,33 @@ def _download_tiktok_api(url: str, tmp_dir: str) -> str | None:
 
           info = data["data"]
 
-          # ── Slideshow / Image post (منشور صور) ──
+          # ── Slideshow / Image post (منشور صور) — تحميل جميع الصور ──
           images = info.get("images") or []
           if images:
-              # Download the first image (highest quality)
-              img_url = images[0] if isinstance(images[0], str) else images[0].get("url", "")
-              if img_url:
-                  out = os.path.join(tmp_dir, "tiktok_image.jpg")
-                  dl_headers = {
-                      "User-Agent": DESKTOP_UA,
-                      "Referer": "https://www.tiktok.com/",
-                  }
-                  img_resp = requests.get(img_url, headers=dl_headers, stream=True, timeout=30)
-                  if img_resp.status_code == 200:
-                      with open(out, "wb") as f:
-                          for chunk in img_resp.iter_content(chunk_size=512 * 1024):
-                              if chunk:
-                                  f.write(chunk)
-                      if os.path.getsize(out) > 5_000:
-                          logger.info(f"tikwm slideshow: downloaded image ({os.path.getsize(out)} bytes)")
-                          return out
+              img_paths: list[str] = []
+              dl_headers = {
+                  "User-Agent": DESKTOP_UA,
+                  "Referer": "https://www.tiktok.com/",
+              }
+              for idx, img in enumerate(images):
+                  img_url = img if isinstance(img, str) else img.get("url", "")
+                  if not img_url:
+                      continue
+                  out = os.path.join(tmp_dir, f"tiktok_slide_{idx:03d}.jpg")
+                  try:
+                      img_resp = requests.get(img_url, headers=dl_headers, stream=True, timeout=30)
+                      if img_resp.status_code == 200:
+                          with open(out, "wb") as f:
+                              for chunk in img_resp.iter_content(chunk_size=512 * 1024):
+                                  if chunk:
+                                      f.write(chunk)
+                          if os.path.getsize(out) > 5_000:
+                              img_paths.append(out)
+                  except Exception as img_e:
+                      logger.warning(f"tikwm slide {idx}: {img_e}")
+              if img_paths:
+                  logger.info(f"tikwm slideshow: downloaded {len(img_paths)} images")
+                  return img_paths
 
           # ── Video post (فيديو) ──
           play_url = info.get("hdplay") or info.get("play")
@@ -707,6 +734,39 @@ async def send_media(message, file_path: str, caption: str) -> None:
             )
 
 
+
+async def send_media_album(message, file_paths: list[str], caption: str) -> None:
+    """
+    يرسل مجموعة صور كألبوم (MediaGroup) في تيليجرام.
+    Sends multiple images as a Telegram media group (album).
+    الحد الأقصى في تيليجرام: 10 عناصر لكل مجموعة.
+    """
+    from telegram import InputMediaPhoto
+
+    # Telegram accepts max 10 items per media group
+    chunks = [file_paths[i:i + 10] for i in range(0, len(file_paths), 10)]
+    first_chunk = True
+    for chunk in chunks:
+        open_files: list = []
+        try:
+            media_group = []
+            for i, fp in enumerate(chunk):
+                f = open(fp, "rb")
+                open_files.append(f)
+                media_group.append(
+                    InputMediaPhoto(
+                        media=f,
+                        caption=caption if (first_chunk and i == 0) else None,
+                        parse_mode=ParseMode.MARKDOWN if (first_chunk and i == 0) else None,
+                    )
+                )
+            await message.reply_media_group(media=media_group)
+            first_chunk = False
+        finally:
+            for f in open_files:
+                f.close()
+
+
 # ===== دالة self-ping لمنع النوم (asyncio) =====
 # Self-ping function to prevent platform sleep using asyncio
 
@@ -841,27 +901,44 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             )
 
         # --- التحقق من الملف المُحمَّل / Verify downloaded file ---
-        if not downloaded_file or not os.path.exists(downloaded_file):
+        # --- التحقق من الملف / الألبوم المُحمَّل ---
+        # Handle both single file (str) and album (list[str]) returns
+        if not downloaded_file or (
+            isinstance(downloaded_file, str) and not os.path.exists(downloaded_file)
+        ) or (
+            isinstance(downloaded_file, list) and not downloaded_file
+        ):
             error_msg = PLATFORM_ERROR_MESSAGES.get(platform, PLATFORM_ERROR_MESSAGES["other"])
             await status_msg.edit_text(error_msg)
             return
 
-        file_size = os.path.getsize(downloaded_file)
+        is_album = isinstance(downloaded_file, list)
+        if is_album:
+            # حساب الحجم الكلي للألبوم
+            file_size = sum(os.path.getsize(f) for f in downloaded_file if os.path.exists(f))
+        else:
+            file_size = os.path.getsize(downloaded_file)
 
-        if file_size > MAX_FILE_SIZE_BYTES:
+        if not is_album and file_size > MAX_FILE_SIZE_BYTES:
             await status_msg.edit_text(
                 f"⚠️ حجم الملف ({human_size(file_size)}) يتجاوز الحد الأقصى المسموح به في تيليجرام (50 MB).\n"
                 "جرّب رابطاً لفيديو بجودة أقل."
             )
             return
 
-        # --- إرسال الملف / Send file ---
+        # --- إرسال الملف أو الألبوم / Send file or album ---
         await status_msg.edit_text("📤 *جارٍ الإرسال...*", parse_mode=ParseMode.MARKDOWN)
 
-        caption = f"⚡ *Alpha Downloader* | منصة الفا\n📦 الحجم: {human_size(file_size)}"
+        if is_album:
+            caption = f"⚡ *Alpha Downloader* | منصة الفا\n🖼 الصور: {len(downloaded_file)}"
+        else:
+            caption = f"⚡ *Alpha Downloader* | منصة الفا\n📦 الحجم: {human_size(file_size)}"
 
         try:
-            await send_media(message, downloaded_file, caption)
+            if is_album:
+                await send_media_album(message, downloaded_file, caption)
+            else:
+                await send_media(message, downloaded_file, caption)
         except Exception as send_err:
             logger.error(f"send_media raised: {send_err}")
             await status_msg.edit_text(
