@@ -891,7 +891,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 
-  # ===== نقطة الدخول الرئيسية / Main Entry Point =====
+# ===== نقطة الدخول الرئيسية / Main Entry Point =====
 
   def main() -> None:
       """
@@ -916,7 +916,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
       )
 
       # حلقة asyncio منفصلة للبوت — تعمل في thread فلا تتلقى إشارات النظام
-      # Separate asyncio loop for bot — runs in a thread so it never receives OS signals
       bot_loop = asyncio.new_event_loop()
 
       async def _run_bot_async() -> None:
@@ -941,8 +940,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
       bot_thread = threading.Thread(target=_start_bot_thread, name="bot-thread", daemon=True)
       bot_thread.start()
 
-      # تشغيل Flask في الـ main thread — يستقبل health checks من Render ويمنع النوم
-      # Run Flask in main thread — receives Render health checks and prevents sleep
+      # Flask في الـ main thread — health checks + منع نوم Render
       port = int(os.environ.get("PORT") or os.environ.get("KEEP_ALIVE_PORT") or 5001)
       logger.info(f"Keep-alive server starting on port {port}...")
       import logging as _logging
